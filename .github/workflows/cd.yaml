@@ -70,12 +70,12 @@ jobs:
           kubectl config set-context --current --namespace=staging
 
       # ── Patch the image tag in deployment ───────────────────
-      - name: Update image in deployment manifest
+      - name: Apply K8s manifests with image tag
         run: |
           IMAGE="${{ env.IMAGE_NAME }}:${{ steps.resolve.outputs.tag }}"
-          echo "📦 Setting image → ${IMAGE}"
-          kubectl set image deployment/react-app \
-            react-app="${IMAGE}"
+          sed -i "s|IMAGE_PLACEHOLDER|${IMAGE}|g" k8s/deployment.yaml
+          kubectl apply -f k8s/deployment.yaml
+          kubectl apply -f k8s/service.yaml
 
       # ── Wait for rollout ─────────────────────────────────────
       - name: Wait for rollout to complete
