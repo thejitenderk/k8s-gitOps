@@ -25,12 +25,12 @@ on:
     types: [completed]
 
 env:
-  IMAGE_NAME: ${{ secrets.DOCKERHUB_USERNAME }}/react-cicd-app
+  IMAGE_NAME: ${{ secrets.DOCKERHUB_USERNAME }}.azurecr.io/react-cicd-app
 
 jobs:
   deploy:
     name: Deploy to Kubernetes
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
 
     # For workflow_run: only proceed if CI actually succeeded
     if: >
@@ -59,16 +59,15 @@ jobs:
           echo "🏷️  Deploying image tag: ${TAG}"
 
       # ── Set up kubectl ───────────────────────────────────────
-      - name: Set up kubectl
-        uses: azure/setup-kubectl@v4
-        with:
-          version: 'latest'
+    #   - name: Set up kubectl
+    #     uses: azure/setup-kubectl@v4
+    #     with:
+    #       version: 'latest'
 
       - name: Configure kubeconfig
         run: |
-          mkdir -p $HOME/.kube
-          echo "${{ secrets.KUBECONFIG }}" | base64 -d > $HOME/.kube/config
-          chmod 600 $HOME/.kube/config
+          kubectl config use-context docker-desktop
+          kubectl config set-context --current --namespace=staging
 
       # ── Patch the image tag in deployment ───────────────────
       - name: Update image in deployment manifest
@@ -76,21 +75,19 @@ jobs:
           IMAGE="${{ env.IMAGE_NAME }}:${{ steps.resolve.outputs.tag }}"
           echo "📦 Setting image → ${IMAGE}"
           kubectl set image deployment/react-app \
-            react-app="${IMAGE}" \
-            --namespace=default
+            react-app="${IMAGE}"
 
       # ── Wait for rollout ─────────────────────────────────────
       - name: Wait for rollout to complete
         run: |
           kubectl rollout status deployment/react-app \
-            --namespace=default \
             --timeout=120s
 
       # ── Verify ───────────────────────────────────────────────
       - name: Verify running pods
         run: |
-          kubectl get pods -n default -l app=react-app
-          kubectl get svc  -n default react-app-svc
+          kubectl get pods -n staging -l app=react-app
+          kubectl get svc  -n staging react-app-svc
 
       - name: Deployment summary
         run: |

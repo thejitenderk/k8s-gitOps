@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: react-app
-  namespace: default
+  namespace: staging
   labels:
     app: react-app
     managed-by: github-actions
@@ -23,7 +23,7 @@ spec:
     spec:
       containers:
         - name: react-app
-          image: YOUR_DOCKERHUB_USERNAME/react-cicd-app:latest   # replaced by CD pipeline
+          image: argocdacrjk.azurecr.io/react-cicd-app:latest
           imagePullPolicy: Always
           ports:
             - containerPort: 80
