@@ -65,10 +65,11 @@ jobs:
         run: |
           IMAGE="${{ env.IMAGE_NAME }}:${{ steps.resolve.outputs.tag }}"
           echo "📦 Setting image → ${IMAGE}"
-          sed -i "s|IMAGE_PLACEHOLDER|${IMAGE}|g" k8s/deployment.yaml
+          yq e '.spec.template.spec.containers[0].image = "'${IMAGE}'"' \
+            -i k8s/deployment.yaml
           kubectl apply -f k8s/deployment.yaml -n ${{ steps.resolve.outputs.namespace }}
           kubectl apply -f k8s/service.yaml    -n ${{ steps.resolve.outputs.namespace }}
-
+          
       - name: Wait for rollout to complete
         run: |
           kubectl rollout status deployment/react-app \
