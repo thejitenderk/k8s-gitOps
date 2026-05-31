@@ -1,0 +1,99 @@
+name: CD — Deploy to Kubernetes
+
+on:
+  # Manual trigger — choose which image tag to deploy
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: 'Docker image tag to deploy (e.g. latest or sha-abc1234)'
+        required: true
+        default: 'latest'
+        type: string
+      environment:
+        description: 'Target environment'
+        required: true
+        default: 'production'
+        type: choice
+        options:
+          - production
+          - staging
+
+  # Auto-trigger after CI completes on main
+  workflow_run:
+    workflows: ["CI — Docker Build & Push"]
+    branches: [main]
+    types: [completed]
+
+env:
+  IMAGE_NAME: ${{ secrets.DOCKERHUB_USERNAME }}/react-cicd-app
+
+jobs:
+  deploy:
+    name: Deploy to Kubernetes
+    runs-on: ubuntu-latest
+
+    # For workflow_run: only proceed if CI actually succeeded
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')
+
+    environment:
+      name: ${{ github.event.inputs.environment || 'production' }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # ── Resolve which tag to deploy ──────────────────────────
+      - name: Resolve image tag
+        id: resolve
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            # Use whatever the user typed in the dispatch form (default: latest)
+            TAG="${{ github.event.inputs.image_tag }}"
+          else
+            # Auto-deploy: always use latest when triggered by CI
+            TAG="latest"
+          fi
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "🏷️  Deploying image tag: ${TAG}"
+
+      # ── Set up kubectl ───────────────────────────────────────
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v4
+        with:
+          version: 'latest'
+
+      - name: Configure kubeconfig
+        run: |
+          mkdir -p $HOME/.kube
+          echo "${{ secrets.KUBECONFIG }}" | base64 -d > $HOME/.kube/config
+          chmod 600 $HOME/.kube/config
+
+      # ── Patch the image tag in deployment ───────────────────
+      - name: Update image in deployment manifest
+        run: |
+          IMAGE="${{ env.IMAGE_NAME }}:${{ steps.resolve.outputs.tag }}"
+          echo "📦 Setting image → ${IMAGE}"
+          kubectl set image deployment/react-app \
+            react-app="${IMAGE}" \
+            --namespace=default
+
+      # ── Wait for rollout ─────────────────────────────────────
+      - name: Wait for rollout to complete
+        run: |
+          kubectl rollout status deployment/react-app \
+            --namespace=default \
+            --timeout=120s
+
+      # ── Verify ───────────────────────────────────────────────
+      - name: Verify running pods
+        run: |
+          kubectl get pods -n default -l app=react-app
+          kubectl get svc  -n default react-app-svc
+
+      - name: Deployment summary
+        run: |
+          echo "✅ Deployed ${{ env.IMAGE_NAME }}:${{ steps.resolve.outputs.tag }}"
+          echo "🌍 Environment : ${{ github.event.inputs.environment || 'production' }}"
+          echo "🔀 Triggered by: ${{ github.event_name }}"
