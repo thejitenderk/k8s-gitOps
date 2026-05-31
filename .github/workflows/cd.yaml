@@ -17,10 +17,8 @@ on:
           - staging                          # ← staging pehle
           - production
 
-  workflow_run:
-    workflows: ["CI — Docker Build & Push"]
-    branches: [main]
-    types: [completed]
+  repository_dispatch:
+    types: [ci-complete]
 
 env:
   IMAGE_NAME: argocdacrjk.azurecr.io/react-cicd-app
@@ -32,7 +30,7 @@ jobs:
 
     if: >
       github.event_name == 'workflow_dispatch' ||
-      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')
+      (github.event_name == 'repository_dispatch' && github.event.action == 'ci-complete')
 
     environment:
       name: ${{ github.event.inputs.environment || 'staging' }}  # ← default staging
@@ -69,7 +67,7 @@ jobs:
             -i k8s/deployment.yaml
           kubectl apply -f k8s/deployment.yaml -n ${{ steps.resolve.outputs.namespace }}
           kubectl apply -f k8s/service.yaml    -n ${{ steps.resolve.outputs.namespace }}
-          
+
       - name: Wait for rollout to complete
         run: |
           kubectl rollout status deployment/react-app \
