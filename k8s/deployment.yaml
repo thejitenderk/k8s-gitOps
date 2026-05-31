@@ -7,6 +7,8 @@ metadata:
     app: react-app
     managed-by: github-actions
 spec:
+  imagePullSecrets:
+    - name: acr-secret
   replicas: 2
   selector:
     matchLabels:
@@ -21,8 +23,6 @@ spec:
       labels:
         app: react-app
     spec:
-      imagePullSecrets:
-        - name: acr-secret 
       containers:
         - name: react-app
           image: argocdacrjk.azurecr.io/react-cicd-app:latest
