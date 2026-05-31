@@ -1,7 +1,6 @@
 name: CD — Deploy to Kubernetes
 
 on:
-  # Manual trigger — choose which image tag to deploy
   workflow_dispatch:
     inputs:
       image_tag:
@@ -12,85 +11,77 @@ on:
       environment:
         description: 'Target environment'
         required: true
-        default: 'production'
+        default: 'staging'                  # ← default staging kiya
         type: choice
         options:
+          - staging                          # ← staging pehle
           - production
-          - staging
 
-  # Auto-trigger after CI completes on main
   workflow_run:
     workflows: ["CI — Docker Build & Push"]
     branches: [main]
     types: [completed]
 
 env:
-  IMAGE_NAME: ${{ secrets.DOCKERHUB_USERNAME }}.azurecr.io/react-cicd-app
+  IMAGE_NAME: argocdacrjk.azurecr.io/react-cicd-app
 
 jobs:
   deploy:
     name: Deploy to Kubernetes
     runs-on: self-hosted
 
-    # For workflow_run: only proceed if CI actually succeeded
     if: >
       github.event_name == 'workflow_dispatch' ||
       (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')
 
     environment:
-      name: ${{ github.event.inputs.environment || 'production' }}
+      name: ${{ github.event.inputs.environment || 'staging' }}  # ← default staging
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # ── Resolve which tag to deploy ──────────────────────────
-      - name: Resolve image tag
+      - name: Resolve image tag and namespace
         id: resolve
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            # Use whatever the user typed in the dispatch form (default: latest)
             TAG="${{ github.event.inputs.image_tag }}"
+            NAMESPACE="${{ github.event.inputs.environment }}"
           else
-            # Auto-deploy: always use latest when triggered by CI
             TAG="latest"
+            NAMESPACE="staging"             # ← auto trigger pe staging
           fi
-          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
-          echo "🏷️  Deploying image tag: ${TAG}"
-
-      # ── Set up kubectl ───────────────────────────────────────
-    #   - name: Set up kubectl
-    #     uses: azure/setup-kubectl@v4
-    #     with:
-    #       version: 'latest'
+          echo "tag=${TAG}"             >> "$GITHUB_OUTPUT"
+          echo "namespace=${NAMESPACE}" >> "$GITHUB_OUTPUT"
+          echo "🏷️  Tag       : ${TAG}"
+          echo "🌍 Namespace  : ${NAMESPACE}"
 
       - name: Configure kubeconfig
         run: |
           kubectl config use-context docker-desktop
-          kubectl config set-context --current --namespace=staging
+          kubectl config set-context --current --namespace=${{ steps.resolve.outputs.namespace }}
 
-      # ── Patch the image tag in deployment ───────────────────
       - name: Apply K8s manifests with image tag
         run: |
           IMAGE="${{ env.IMAGE_NAME }}:${{ steps.resolve.outputs.tag }}"
+          echo "📦 Setting image → ${IMAGE}"
           sed -i "s|IMAGE_PLACEHOLDER|${IMAGE}|g" k8s/deployment.yaml
-          kubectl apply -f k8s/deployment.yaml
-          kubectl apply -f k8s/service.yaml
+          kubectl apply -f k8s/deployment.yaml -n ${{ steps.resolve.outputs.namespace }}
+          kubectl apply -f k8s/service.yaml    -n ${{ steps.resolve.outputs.namespace }}
 
-      # ── Wait for rollout ─────────────────────────────────────
       - name: Wait for rollout to complete
         run: |
           kubectl rollout status deployment/react-app \
+            -n ${{ steps.resolve.outputs.namespace }} \
             --timeout=120s
 
-      # ── Verify ───────────────────────────────────────────────
       - name: Verify running pods
         run: |
-          kubectl get pods -n staging -l app=react-app
-          kubectl get svc  -n staging react-app-svc
+          kubectl get pods -n ${{ steps.resolve.outputs.namespace }} -l app=react-app
+          kubectl get svc  -n ${{ steps.resolve.outputs.namespace }} react-app-svc
 
       - name: Deployment summary
         run: |
           echo "✅ Deployed ${{ env.IMAGE_NAME }}:${{ steps.resolve.outputs.tag }}"
-          echo "🌍 Environment : ${{ github.event.inputs.environment || 'production' }}"
+          echo "🌍 Namespace  : ${{ steps.resolve.outputs.namespace }}"
           echo "🔀 Triggered by: ${{ github.event_name }}"
