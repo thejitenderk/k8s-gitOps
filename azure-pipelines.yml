@@ -1,0 +1,177 @@
+# azure-pipelines-cd.yml
+trigger: none
+
+resources:
+  pipelines:
+    - pipeline: ci-pipeline
+      source: 'your-ci-pipeline-name'        # Replace with your CI pipeline name
+      trigger:
+        branches:
+          include:
+            - main
+            - develop
+
+variables:
+  - name: kubernetesServiceConnection
+    value: 'sa-local'
+  - name: namespace
+    value: 'dev'
+  - name: imageRepository
+    value: 'acrforalluser.azurecr.io/react-cicd-app'                 # Replace with your image name
+  - name: containerRegistry
+    value: 'acrforalluser.azurecr.io'
+  - name: imagePullSecret
+    value: 'acr-pull-secret'
+  - name: imageTag
+    value: '$(Build.BuildId)'
+
+stages:
+  # ─────────────────────────────────────────────────────
+  # STAGE 1 — Create imagePullSecret from ACR
+  # ─────────────────────────────────────────────────────
+  - stage: Setup_Secrets
+    displayName: '🔐 Setup ACR Pull Secret'
+    jobs:
+      - job: CreateImagePullSecret
+        displayName: 'Create imagePullSecret in dev'
+        pool:
+          vmImage: 'ubuntu-latest'
+        steps:
+          - task: KubernetesManifest@1
+            displayName: '🔑 Create ACR imagePullSecret'
+            inputs:
+              action: 'createSecret'
+              connectionType: 'kubernetesServiceConnection'
+              kubernetesServiceConnection: '$(kubernetesServiceConnection)'
+              namespace: '$(namespace)'
+              secretType: 'dockerRegistry'
+              secretName: '$(imagePullSecret)'
+              dockerRegistryEndpoint: 'acrforalluser'   # Azure DevOps ACR service connection name
+
+  # ─────────────────────────────────────────────────────
+  # STAGE 2 — Download Artifact from CI
+  # ─────────────────────────────────────────────────────
+  - stage: Download_Artifact
+    displayName: '📦 Download Artifact'
+    dependsOn: Setup_Secrets
+    condition: succeeded()
+    jobs:
+      - job: DownloadArtifact
+        displayName: 'Download K8s Manifests from CI'
+        pool:
+          vmImage: 'ubuntu-latest'
+        steps:
+          - download: ci-pipeline
+            artifact: 'manifests'
+            displayName: '⬇️ Download Manifests'
+
+  # ─────────────────────────────────────────────────────
+  # STAGE 3 — Deploy to DEV
+  # ─────────────────────────────────────────────────────
+  - stage: Deploy_Dev
+    displayName: '🚀 Deploy to DEV'
+    dependsOn: Download_Artifact
+    condition: succeeded()
+    jobs:
+      - deployment: DeployToDev
+        displayName: 'Deploy to dev namespace'
+        pool:
+          vmImage: 'ubuntu-latest'
+        environment: 'dev'
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+
+                # ── Bake Manifests (substitute image tag) ──
+                - task: KubernetesManifest@1
+                  displayName: '🔁 Bake Manifests'
+                  name: bake
+                  inputs:
+                    action: 'bake'
+                    renderType: 'kubectl'
+                    manifests: |
+                      $(Pipeline.Workspace)/ci-pipeline/manifests/deployment.yaml
+                      $(Pipeline.Workspace)/ci-pipeline/manifests/service.yaml
+
+                # ── Deploy to AKS dev namespace ──
+                - task: KubernetesManifest@1
+                  displayName: '🚀 Deploy to DEV Namespace'
+                  inputs:
+                    action: 'deploy'
+                    connectionType: 'kubernetesServiceConnection'
+                    kubernetesServiceConnection: '$(kubernetesServiceConnection)'
+                    namespace: '$(namespace)'
+                    manifests: $(bake.manifestsBundle)
+                    imagePullSecrets: '$(imagePullSecret)'
+                    containers: |
+                      acrforalluser.azurecr.io/$(imageRepository):$(imageTag)
+
+                # ── Verify Rollout ──
+                - task: Kubernetes@1
+                  displayName: '🔍 Verify Rollout Status'
+                  inputs:
+                    connectionType: 'kubernetesServiceConnection'
+                    kubernetesServiceConnection: '$(kubernetesServiceConnection)'
+                    namespace: '$(namespace)'
+                    command: 'rollout'
+                    arguments: 'status deployment/$(imageRepository) -n $(namespace) --timeout=120s'
+
+  # ─────────────────────────────────────────────────────
+  # STAGE 4 — Smoke Test
+  # ─────────────────────────────────────────────────────
+  - stage: Smoke_Test
+    displayName: '🧪 Smoke Test DEV'
+    dependsOn: Deploy_Dev
+    condition: succeeded()
+    jobs:
+      - job: SmokeTest
+        displayName: 'Verify Pods & Print Summary'
+        pool:
+          vmImage: 'ubuntu-latest'
+        steps:
+
+          # ── Check Pod Status ──
+          - task: Kubernetes@1
+            displayName: '🟢 Check Pod Status'
+            inputs:
+              connectionType: 'kubernetesServiceConnection'
+              kubernetesServiceConnection: '$(kubernetesServiceConnection)'
+              namespace: '$(namespace)'
+              command: 'get'
+              arguments: 'pods -n dev -l app=$(imageRepository) --field-selector=status.phase=Running'
+
+          # ── Check Service ──
+          - task: Kubernetes@1
+            displayName: '🌐 Check Service Status'
+            inputs:
+              connectionType: 'kubernetesServiceConnection'
+              kubernetesServiceConnection: '$(kubernetesServiceConnection)'
+              namespace: '$(namespace)'
+              command: 'get'
+              arguments: 'svc -n dev'
+
+          # ── Check imagePullSecret linked to SA ──
+          - task: Kubernetes@1
+            displayName: '🔐 Verify SA imagePullSecret'
+            inputs:
+              connectionType: 'kubernetesServiceConnection'
+              kubernetesServiceConnection: '$(kubernetesServiceConnection)'
+              namespace: '$(namespace)'
+              command: 'get'
+              arguments: 'serviceaccount sa-local -n dev -o yaml'
+
+          # ── Deployment Summary ──
+          - script: |
+              echo "╔══════════════════════════════════════════╗"
+              echo "║        ✅ DEV DEPLOYMENT SUMMARY          ║"
+              echo "╠══════════════════════════════════════════╣"
+              echo "║ Namespace   : dev                         ║"
+              echo "║ ACR         : acrforalluser.azurecr.io    ║"
+              echo "║ Image       : $(imageRepository)          ║"
+              echo "║ Tag         : $(imageTag)                 ║"
+              echo "║ SA          : sa-local                    ║"
+              echo "║ Pull Secret : acr-pull-secret             ║"
+              echo "║ Status      : SUCCESS 🚀                  ║"
+              echo "╚══════════════════════════════════════════╝"
+            displayName: '📋 Print Deployment Summary'
