@@ -69,7 +69,7 @@ stages:
                     connectionType: 'kubernetesServiceConnection'
                     kubernetesServiceConnection: '$(kubernetesServiceConnection)'
                     namespace: '$(namespace)'
-                    manifests: $(bake.manifestsBundle)
+                    manifests: $(Build.SourcesDirectory)
                     imagePullSecrets: '$(imagePullSecret)'
                     containers: |
                       $(containerRegistry)/$(imageRepository):$(imageTag)
