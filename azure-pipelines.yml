@@ -19,23 +19,23 @@ stages:
   # # ─────────────────────────────────────────────────────
   # # STAGE 1 — Create imagePullSecret from ACR
   # # ─────────────────────────────────────────────────────
-  # - stage: Setup_Secrets
-  #   displayName: '🔐 Setup ACR Pull Secret'
-  #   jobs:
-  #     - job: CreatePullSecret
-  #       displayName: 'Create ACR imagePullSecret in dev'
-  #       pool: mac                                          # ✅ self hosted agent
-  #       steps:
-  #         - task: KubernetesManifest@1
-  #           displayName: '🔑 Create acr-pull-secret'
-  #           inputs:
-  #             action: 'createSecret'
-  #             connectionType: 'kubernetesServiceConnection'
-  #             kubernetesServiceConnection: '$(kubernetesServiceConnection)'
-  #             namespace: '$(namespace)'
-  #             secretType: 'dockerRegistry'
-  #             secretName: '$(imagePullSecret)'
-  #             dockerRegistryEndpoint: 'acrforalluser'      # ✅ ACR service connection name in Azure DevOps
+  - stage: Setup_Secrets
+    displayName: '🔐 Setup ACR Pull Secret'
+    jobs:
+      - job: CreatePullSecret
+        displayName: 'Create ACR imagePullSecret in dev'
+        pool: mac                                          # ✅ self hosted agent
+        steps:
+          - task: KubernetesManifest@1
+            displayName: '🔑 Create acr-pull-secret'
+            inputs:
+              action: 'createSecret'
+              connectionType: 'kubernetesServiceConnection'
+              kubernetesServiceConnection: '$(kubernetesServiceConnection)'
+              namespace: '$(namespace)'
+              secretType: 'dockerRegistry'
+              secretName: '$(imagePullSecret)'
+              dockerRegistryEndpoint: 'docker-acr'      # ✅ ACR service connection name in Azure DevOps
 
   # ─────────────────────────────────────────────────────
   # STAGE 2 — Deploy to DEV
