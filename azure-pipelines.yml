@@ -15,7 +15,7 @@ variables:
   - name: serviceAccount
     value: 'sa-local'                    # ✅ your service account
   - name: imageTag
-    value: '$(Build.BuildId)'
+    value: 'latest'
 
 stages:
   # # ─────────────────────────────────────────────────────
