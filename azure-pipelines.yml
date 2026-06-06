@@ -1,15 +1,6 @@
 # azure-pipelines-cd.yml
 trigger: none
 
-resources:
-  pipelines:
-    - pipeline: ci-pipeline
-      source: 'your-ci-pipeline-name'        # Replace with your CI pipeline name
-      trigger:
-        branches:
-          include:
-            - main
-            - develop
 
 variables:
   - name: kubernetesServiceConnection
@@ -32,38 +23,11 @@ stages:
   - stage: Setup_Secrets
     displayName: '🔐 Setup ACR Pull Secret'
     jobs:
-      - job: CreateImagePullSecret
-        displayName: 'Create imagePullSecret in dev'
-        pool:
-          vmImage: 'ubuntu-latest'
-        steps:
-          - task: KubernetesManifest@1
-            displayName: '🔑 Create ACR imagePullSecret'
-            inputs:
-              action: 'createSecret'
-              connectionType: 'kubernetesServiceConnection'
-              kubernetesServiceConnection: '$(kubernetesServiceConnection)'
-              namespace: '$(namespace)'
-              secretType: 'dockerRegistry'
-              secretName: '$(imagePullSecret)'
-              dockerRegistryEndpoint: 'acrforalluser'   # Azure DevOps ACR service connection name
-
-  # ─────────────────────────────────────────────────────
-  # STAGE 2 — Download Artifact from CI
-  # ─────────────────────────────────────────────────────
-  - stage: Download_Artifact
-    displayName: '📦 Download Artifact'
-    dependsOn: Setup_Secrets
-    condition: succeeded()
-    jobs:
-      - job: DownloadArtifact
-        displayName: 'Download K8s Manifests from CI'
-        pool:
-          vmImage: 'ubuntu-latest'
-        steps:
-          - download: ci-pipeline
-            artifact: 'manifests'
-            displayName: '⬇️ Download Manifests'
+    - job:
+      pool: mac
+      steps:
+      
+      
 
   # ─────────────────────────────────────────────────────
   # STAGE 3 — Deploy to DEV
@@ -75,8 +39,7 @@ stages:
     jobs:
       - deployment: DeployToDev
         displayName: 'Deploy to dev namespace'
-        pool:
-          vmImage: 'ubuntu-latest'
+        pool: mac
         environment: 'dev'
         strategy:
           runOnce:
@@ -91,8 +54,8 @@ stages:
                     action: 'bake'
                     renderType: 'kubectl'
                     manifests: |
-                      $(Pipeline.Workspace)/ci-pipeline/manifests/deployment.yaml
-                      $(Pipeline.Workspace)/ci-pipeline/manifests/service.yaml
+                      $(Pipeline.Workspace)/k8s/deployment.yaml
+                      $(Pipeline.Workspace)/k8s/service.yaml
 
                 # ── Deploy to AKS dev namespace ──
                 - task: KubernetesManifest@1
@@ -127,8 +90,7 @@ stages:
     jobs:
       - job: SmokeTest
         displayName: 'Verify Pods & Print Summary'
-        pool:
-          vmImage: 'ubuntu-latest'
+        pool: mac
         steps:
 
           # ── Check Pod Status ──
