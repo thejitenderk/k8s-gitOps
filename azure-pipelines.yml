@@ -54,15 +54,11 @@ stages:
               steps:
 
                 # ── Bake Manifests ──
-                - task: KubernetesManifest@1
-                  displayName: '🔁 Bake Manifests'
-                  name: bake
-                  inputs:
-                    action: 'bake'
-                    renderType: 'kubectl'
-                    manifests: |
-                      $(Pipeline.Workspace)/k8s/deployment.yaml
-                      $(Pipeline.Workspace)/k8s/service.yaml
+                - script: |
+                    sed -i '' "s|IMAGE_TAG|$(imageTag)|g" $(Build.SourcesDirectory)/k8s/deployment.yaml
+                    sed -i '' "s|ACR_REGISTRY|$(containerRegistry)|g" $(Build.SourcesDirectory)/k8s/deployment.yaml
+                    cat $(Build.SourcesDirectory)/k8s/deployment.yaml
+                  displayName: '🔁 Substitute Image Tag in Manifest'
 
                 # ── Deploy to dev namespace ──
                 - task: KubernetesManifest@1
@@ -79,14 +75,13 @@ stages:
 
                 # ── Verify Rollout ──
                 - task: Kubernetes@1
-                  displayName: '🔍 Verify Rollout Status'
                   inputs:
                     connectionType: 'kubernetesServiceConnection'
-                    kubernetesServiceConnection: '$(kubernetesServiceConnection)'
                     namespace: '$(namespace)'
                     command: 'rollout'
                     arguments: 'status deployment/$(imageRepository) -n $(namespace) --timeout=120s'
-
+                    secretType: 'dockerRegistry'
+                    containerRegistryType: 'Azure Container Registry'
   # ─────────────────────────────────────────────────────
   # STAGE 3 — Smoke Test
   # ─────────────────────────────────────────────────────
