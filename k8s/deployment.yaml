@@ -1,52 +1,45 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: react-app
+  name: APP_NAME
+  namespace: NAMESPACE
   labels:
-    app: react-app
-    managed-by: github-actions
+    app: APP_NAME
 spec:
   replicas: 2
   selector:
     matchLabels:
-      app: react-app
-  strategy:
-    type: RollingUpdate
-    rollingUpdate:
-      maxSurge: 1
-      maxUnavailable: 0
+      app: APP_NAME
   template:
     metadata:
       labels:
-        app: react-app
+        app: APP_NAME
     spec:
+      serviceAccountName: SERVICE_ACCOUNT
       imagePullSecrets:
-        - name: acr-secret
+        - name: IMAGE_PULL_SECRET
       containers:
-        - name: react-app
-          image: argocdacrjk.azurecr.io/react-cicd-app:latest
+        - name: APP_NAME
+          image: ACR_REGISTRY/APP_NAME:IMAGE_TAG
           imagePullPolicy: Always
           ports:
-            - containerPort: 80
-          env:
-            - name: REACT_APP_ENV
-              value: "production"
+            - containerPort: 3000
           resources:
             requests:
-              cpu: "100m"
               memory: "128Mi"
+              cpu: "100m"
             limits:
-              cpu: "250m"
               memory: "256Mi"
+              cpu: "200m"
           readinessProbe:
             httpGet:
-              path: /health
-              port: 80
-            initialDelaySeconds: 5
-            periodSeconds: 10
+              path: /
+              port: 3000
+            initialDelaySeconds: 10
+            periodSeconds: 5
           livenessProbe:
             httpGet:
-              path: /health
-              port: 80
-            initialDelaySeconds: 10
-            periodSeconds: 20
+              path: /
+              port: 3000
+            initialDelaySeconds: 15
+            periodSeconds: 10
