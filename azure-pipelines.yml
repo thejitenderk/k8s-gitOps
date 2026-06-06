@@ -1,14 +1,13 @@
 # azure-pipelines-cd.yml
 trigger: none
 
-
 variables:
   - name: kubernetesServiceConnection
-    value: 'sa-local'
+    value: 'dev-dev-1780706333593'                        # ✅ your k8s service connection
   - name: namespace
     value: 'dev'
   - name: imageRepository
-    value: 'acrforalluser.azurecr.io/react-cicd-app'                 # Replace with your image name
+    value: 'react-cicd-app'                               # ✅ image name only
   - name: containerRegistry
     value: 'acrforalluser.azurecr.io'
   - name: imagePullSecret
@@ -17,36 +16,44 @@ variables:
     value: '$(Build.BuildId)'
 
 stages:
-  # ─────────────────────────────────────────────────────
-  # STAGE 1 — Create imagePullSecret from ACR
-  # ─────────────────────────────────────────────────────
-  - stage: Setup_Secrets
-    displayName: '🔐 Setup ACR Pull Secret'
-    jobs:
-    - job:
-      pool: mac
-      steps:
-      
-      
+  # # ─────────────────────────────────────────────────────
+  # # STAGE 1 — Create imagePullSecret from ACR
+  # # ─────────────────────────────────────────────────────
+  # - stage: Setup_Secrets
+  #   displayName: '🔐 Setup ACR Pull Secret'
+  #   jobs:
+  #     - job: CreatePullSecret
+  #       displayName: 'Create ACR imagePullSecret in dev'
+  #       pool: mac                                          # ✅ self hosted agent
+  #       steps:
+  #         - task: KubernetesManifest@1
+  #           displayName: '🔑 Create acr-pull-secret'
+  #           inputs:
+  #             action: 'createSecret'
+  #             connectionType: 'kubernetesServiceConnection'
+  #             kubernetesServiceConnection: '$(kubernetesServiceConnection)'
+  #             namespace: '$(namespace)'
+  #             secretType: 'dockerRegistry'
+  #             secretName: '$(imagePullSecret)'
+  #             dockerRegistryEndpoint: 'acrforalluser'      # ✅ ACR service connection name in Azure DevOps
 
   # ─────────────────────────────────────────────────────
-  # STAGE 3 — Deploy to DEV
+  # STAGE 2 — Deploy to DEV
   # ─────────────────────────────────────────────────────
   - stage: Deploy_Dev
     displayName: '🚀 Deploy to DEV'
-    dependsOn: Download_Artifact
     condition: succeeded()
     jobs:
       - deployment: DeployToDev
         displayName: 'Deploy to dev namespace'
-        pool: mac
-        environment: 'dev'
+        pool: mac                                          # ✅ self hosted agent
+        environment: 'dev'                                 # ✅ your Azure DevOps environment
         strategy:
           runOnce:
             deploy:
               steps:
 
-                # ── Bake Manifests (substitute image tag) ──
+                # ── Bake Manifests ──
                 - task: KubernetesManifest@1
                   displayName: '🔁 Bake Manifests'
                   name: bake
@@ -57,7 +64,7 @@ stages:
                       $(Pipeline.Workspace)/k8s/deployment.yaml
                       $(Pipeline.Workspace)/k8s/service.yaml
 
-                # ── Deploy to AKS dev namespace ──
+                # ── Deploy to dev namespace ──
                 - task: KubernetesManifest@1
                   displayName: '🚀 Deploy to DEV Namespace'
                   inputs:
@@ -68,7 +75,7 @@ stages:
                     manifests: $(bake.manifestsBundle)
                     imagePullSecrets: '$(imagePullSecret)'
                     containers: |
-                      acrforalluser.azurecr.io/$(imageRepository):$(imageTag)
+                      $(containerRegistry)/$(imageRepository):$(imageTag)
 
                 # ── Verify Rollout ──
                 - task: Kubernetes@1
@@ -81,7 +88,7 @@ stages:
                     arguments: 'status deployment/$(imageRepository) -n $(namespace) --timeout=120s'
 
   # ─────────────────────────────────────────────────────
-  # STAGE 4 — Smoke Test
+  # STAGE 3 — Smoke Test
   # ─────────────────────────────────────────────────────
   - stage: Smoke_Test
     displayName: '🧪 Smoke Test DEV'
@@ -90,7 +97,7 @@ stages:
     jobs:
       - job: SmokeTest
         displayName: 'Verify Pods & Print Summary'
-        pool: mac
+        pool: mac                                          # ✅ self hosted agent
         steps:
 
           # ── Check Pod Status ──
@@ -113,7 +120,7 @@ stages:
               command: 'get'
               arguments: 'svc -n dev'
 
-          # ── Check imagePullSecret linked to SA ──
+          # ── Verify SA imagePullSecret ──
           - task: Kubernetes@1
             displayName: '🔐 Verify SA imagePullSecret'
             inputs:
@@ -130,10 +137,11 @@ stages:
               echo "╠══════════════════════════════════════════╣"
               echo "║ Namespace   : dev                         ║"
               echo "║ ACR         : acrforalluser.azurecr.io    ║"
-              echo "║ Image       : $(imageRepository)          ║"
+              echo "║ Image       : react-cicd-app              ║"
               echo "║ Tag         : $(imageTag)                 ║"
               echo "║ SA          : sa-local                    ║"
               echo "║ Pull Secret : acr-pull-secret             ║"
+              echo "║ K8s Conn    : dev-dev-1780706333593       ║"
               echo "║ Status      : SUCCESS 🚀                  ║"
               echo "╚══════════════════════════════════════════╝"
             displayName: '📋 Print Deployment Summary'
