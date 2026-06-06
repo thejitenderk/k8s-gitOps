@@ -3,15 +3,17 @@ trigger: none
 
 variables:
   - name: kubernetesServiceConnection
-    value: 'dev-dev-1780706333593'                        # ✅ your k8s service connection
+    value: 'dev-dev-1780706333593'
   - name: namespace
     value: 'dev'
   - name: imageRepository
-    value: 'react-cicd-app'                               # ✅ image name only
+    value: 'react-cicd-app'              # ✅ your app name
   - name: containerRegistry
     value: 'acrforalluser.azurecr.io'
   - name: imagePullSecret
-    value: 'acr-pull-secret'
+    value: 'acr-pull-secret'             # ✅ your pull secret
+  - name: serviceAccount
+    value: 'sa-local'                    # ✅ your service account
   - name: imageTag
     value: '$(Build.BuildId)'
 
@@ -56,10 +58,21 @@ stages:
 
                 # ── Bake Manifests ──
                 - script: |
-                    sed -i '' "s|IMAGE_TAG|$(imageTag)|g" $(Build.SourcesDirectory)/k8s/deployment.yaml
-                    sed -i '' "s|ACR_REGISTRY|$(containerRegistry)|g" $(Build.SourcesDirectory)/k8s/deployment.yaml
+                    sed -i '' "s|APP_NAME|$(imageRepository)|g"         $(Build.SourcesDirectory)/k8s/deployment.yaml
+                    sed -i '' "s|NAMESPACE|$(namespace)|g"              $(Build.SourcesDirectory)/k8s/deployment.yaml
+                    sed -i '' "s|ACR_REGISTRY|$(containerRegistry)|g"   $(Build.SourcesDirectory)/k8s/deployment.yaml
+                    sed -i '' "s|IMAGE_TAG|$(imageTag)|g"               $(Build.SourcesDirectory)/k8s/deployment.yaml
+                    sed -i '' "s|SERVICE_ACCOUNT|$(serviceAccount)|g"   $(Build.SourcesDirectory)/k8s/deployment.yaml
+                    sed -i '' "s|IMAGE_PULL_SECRET|$(imagePullSecret)|g" $(Build.SourcesDirectory)/k8s/deployment.yaml
+
+                    sed -i '' "s|APP_NAME|$(imageRepository)|g"         $(Build.SourcesDirectory)/k8s/service.yaml
+                    sed -i '' "s|NAMESPACE|$(namespace)|g"              $(Build.SourcesDirectory)/k8s/service.yaml
+
+                    echo "=== deployment.yaml ==="
                     cat $(Build.SourcesDirectory)/k8s/deployment.yaml
-                  displayName: '🔁 Substitute Image Tag in Manifest'
+                    echo "=== service.yaml ==="
+                    cat $(Build.SourcesDirectory)/k8s/service.yaml
+                  displayName: '🔁 Substitute All Placeholders in Manifests'
 
                 # ── Deploy to dev namespace ──
                 # ── Deploy to dev namespace ──
