@@ -62,6 +62,7 @@ stages:
                   displayName: '🔁 Substitute Image Tag in Manifest'
 
                 # ── Deploy to dev namespace ──
+                # ── Deploy to dev namespace ──
                 - task: KubernetesManifest@1
                   displayName: '🚀 Deploy to DEV Namespace'
                   inputs:
@@ -69,7 +70,9 @@ stages:
                     connectionType: 'kubernetesServiceConnection'
                     kubernetesServiceConnection: '$(kubernetesServiceConnection)'
                     namespace: '$(namespace)'
-                    manifests: $(Build.SourcesDirectory)
+                    manifests: |
+                      $(Build.SourcesDirectory)/k8s/deployment.yaml
+                      $(Build.SourcesDirectory)/k8s/service.yaml
                     imagePullSecrets: '$(imagePullSecret)'
                     containers: |
                       $(containerRegistry)/$(imageRepository):$(imageTag)
